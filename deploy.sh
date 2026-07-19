@@ -10,6 +10,5 @@ docker build -t dnx-taskbot-frontend:latest ./frontend
 echo "==> docker build db-viewer"
 docker build -t dnx-taskbot-db-viewer:latest ./db-viewer
 echo "==> docker compose up -d --force-recreate"
-# نکته: سرویس sshproxy فقط وقتی اجرا می‌شود که COMPOSE_PROFILES=proxy در .env ست شده باشد
 docker compose up -d --force-recreate
 echo "==> done"

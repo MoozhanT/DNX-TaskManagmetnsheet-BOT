@@ -71,3 +71,36 @@ class TaskUpdate(BaseModel):
     assignee_id: Optional[str] = None
     due_date: Optional[datetime] = None
     status: Optional[str] = None
+
+
+# ───────────────────── مسیرهای داخلی (سرویس بات، /internal/*) ─────────────────────
+# این‌ها فقط توسط سرویس بات (روی سرور دیگر) با کلید مشترک INTERNAL_API_KEY صدا زده می‌شوند.
+
+class BotMemberRegister(BaseModel):
+    telegram_chat_id: int
+    telegram_username: Optional[str] = None
+    full_name: str
+
+
+class BotMemberOut(BaseModel):
+    id: str
+    full_name: str
+
+
+class BotTaskCreate(BaseModel):
+    telegram_chat_id: int
+    title: str
+    due_date: Optional[datetime] = None
+
+
+class BotTaskOut(BaseModel):
+    id: str
+    title: str
+    due_date: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BotTaskDone(BaseModel):
+    telegram_chat_id: int

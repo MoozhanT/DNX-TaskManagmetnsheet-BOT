@@ -1,0 +1,13 @@
+services:
+  telegram-bot:
+    image: dnx-taskbot-telegram-bot:latest
+    build:
+      context: .
+    ports:
+      # فقط برای تست مستقیم/عیب‌یابی؛ اگر لازم نبود می‌توانی این را حذف کنی
+      - "8090:8090"
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      IRAN_API_BASE_URL: ${IRAN_API_BASE_URL}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+    restart: unless-stopped

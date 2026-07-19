@@ -8,10 +8,12 @@
 import os
 from datetime import datetime, timedelta
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+
+from config import INTERNAL_API_KEY
 
 # نکته‌ی امنیتی: این مقدار را در پروداکشن حتماً از طریق متغیر محیطی SECRET_KEY عوض کن
 SECRET_KEY = os.environ.get("SECRET_KEY", "این-را-در-پروداکشن-عوض-کن")
@@ -58,3 +60,9 @@ def require_admin(credentials: HTTPAuthorizationCredentials = Depends(bearer_sch
     if payload.get("role") != "admin":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="این عملیات فقط برای ادمین مجاز است")
     return payload
+
+
+def require_internal_key(x_internal_key: str = Header(default="")) -> None:
+    """این dependency را روی مسیرهای /internal/* می‌گذاریم؛ فقط سرویس بات (با کلید مشترک) اجازه‌ی دسترسی دارد."""
+    if not INTERNAL_API_KEY or x_internal_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="دسترسی غیرمجاز")

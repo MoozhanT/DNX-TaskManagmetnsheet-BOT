@@ -8,10 +8,13 @@
   POST         /api/admin/setup        -> ساخت اولین حساب پنل وب (یک‌بارمصرف)
   POST         /api/admin/login        -> ورود پنل وب
 
-بات تلگرام و scheduler یادآوری هم در همین پراسه، از طریق lifespan، اجرا می‌شوند.
+  مسیرهای /internal/* فقط برای سرویس بات (روی سرور دیگر، telegram-bot/) هستند،
+  چون خود این بک‌اند دیگر مستقیم به تلگرام وصل نمی‌شود (نگاه کن به README آن پوشه).
+
+scheduler یادآوری هم در همین پراسه، از طریق lifespan، اجرا می‌شود (یادآوری‌ها را
+از طریق سرویس بات ارسال می‌کند، نه مستقیم).
 """
 
-import asyncio
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -21,13 +24,12 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-import bot as bot_module
 import models
 import schemas
 import scheduler as scheduler_module
-from auth import create_access_token, hash_password, require_admin, verify_password
+from auth import create_access_token, hash_password, require_admin, require_internal_key, verify_password
 from database import Base, engine, get_db
-from task_utils import apply_due_date
+from task_utils import apply_due_date, find_task_by_short_id
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -37,12 +39,9 @@ Base.metadata.create_all(bind=engine)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    bot_task = asyncio.create_task(bot_module.start_polling())
     scheduler_module.start()
     yield
     scheduler_module.shutdown()
-    bot_task.cancel()
-    await bot_module.shutdown()
 
 
 app = FastAPI(title="DNX Task Manager Bot — API", lifespan=lifespan)
@@ -196,3 +195,77 @@ def update_member(member_id: str, payload: schemas.MemberUpdate, db: Session = D
     db.commit()
     db.refresh(member)
     return member
+
+
+# ═════════════════ مسیرهای داخلی (فقط سرویس بات، با کلید مشترک) ═════════════════
+# سرویس بات روی سرور دیگری (با دسترسی مستقیم به تلگرام) اجرا می‌شود و برای هر
+# دستور کاربر (/start، /addtask، /mytasks، /done) یکی از این مسیرها را صدا می‌زند.
+
+@app.post(
+    "/internal/members/register",
+    response_model=schemas.BotMemberOut,
+    dependencies=[Depends(require_internal_key)],
+)
+def bot_register_member(payload: schemas.BotMemberRegister, db: Session = Depends(get_db)):
+    member = db.query(models.Member).filter(models.Member.telegram_chat_id == payload.telegram_chat_id).first()
+    if member is None:
+        member = models.Member(
+            telegram_chat_id=payload.telegram_chat_id,
+            telegram_username=payload.telegram_username,
+            full_name=payload.full_name,
+        )
+        db.add(member)
+        db.commit()
+        db.refresh(member)
+    return member
+
+
+@app.post(
+    "/internal/tasks",
+    response_model=schemas.BotTaskOut,
+    dependencies=[Depends(require_internal_key)],
+)
+def bot_create_task(payload: schemas.BotTaskCreate, db: Session = Depends(get_db)):
+    member = db.query(models.Member).filter(models.Member.telegram_chat_id == payload.telegram_chat_id).first()
+    if not member:
+        raise HTTPException(status_code=404, detail="عضو پیدا نشد؛ اول باید /start زده باشد")
+
+    if not payload.title.strip():
+        raise HTTPException(status_code=400, detail="عنوان تسک نمی‌تواند خالی باشد")
+
+    task = models.Task(title=payload.title.strip(), assignee_id=member.id, created_by_id=member.id)
+    apply_due_date(task, payload.due_date)
+    db.add(task)
+    db.commit()
+    db.refresh(task)
+    return task
+
+
+@app.get(
+    "/internal/tasks",
+    response_model=List[schemas.BotTaskOut],
+    dependencies=[Depends(require_internal_key)],
+)
+def bot_list_tasks(telegram_chat_id: int, db: Session = Depends(get_db)):
+    member = db.query(models.Member).filter(models.Member.telegram_chat_id == telegram_chat_id).first()
+    if not member:
+        return []
+    return (
+        db.query(models.Task)
+        .filter(models.Task.assignee_id == member.id, models.Task.status == "pending")
+        .order_by(models.Task.due_date.is_(None), models.Task.due_date)
+        .all()
+    )
+
+
+@app.post("/internal/tasks/{short_id}/done", dependencies=[Depends(require_internal_key)])
+def bot_complete_task(short_id: str, payload: schemas.BotTaskDone, db: Session = Depends(get_db)):
+    member = db.query(models.Member).filter(models.Member.telegram_chat_id == payload.telegram_chat_id).first()
+    task = find_task_by_short_id(db, short_id)
+    if not task or not member or task.assignee_id != member.id:
+        raise HTTPException(status_code=404, detail="تسکی با این شناسه که مال خودت باشد پیدا نشد")
+
+    task.status = "done"
+    task.completed_at = datetime.utcnow()
+    db.commit()
+    return {"ok": True, "title": task.title}
