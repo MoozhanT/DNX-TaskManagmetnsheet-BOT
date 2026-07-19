@@ -10,6 +10,10 @@ backend/*.pyc
 backend/app.db
 backend/data/
 
+# سرویس بات تلگرام (سرور دیگر)
+telegram-bot/__pycache__/
+telegram-bot/*.pyc
+
 # فرانت‌اند
 frontend/node_modules/
 frontend/dist/
