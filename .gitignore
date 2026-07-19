@@ -1,0 +1,22 @@
+# رازها و تنظیمات محلی
+.env
+frontend/.env.local
+
+# بک‌اند پایتون
+backend/venv/
+backend/__pycache__/
+backend/*.pyc
+backend/app.db
+backend/data/
+
+# فرانت‌اند
+frontend/node_modules/
+frontend/dist/
+# یوزر/پسورد نمایشگر دیتابیس؛ در DOCKER.md توضیح داده شده چطور خودت بسازی‌اش
+frontend/db-viewer.htpasswd
+
+# لاگ‌های محلی
+*.log
+
+# تنظیمات محلی Claude Code (مخصوص همین سیستم، نه پروژه)
+.claude/

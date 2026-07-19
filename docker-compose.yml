@@ -1,0 +1,34 @@
+services:
+  backend:
+    image: dnx-taskbot-backend:latest
+    ports:
+      # پورت 8000 هاست هم باز است (اختیاری، فقط برای تست مستقیم API/دیدن /docs)
+      - "8000:8000"
+    environment:
+      SECRET_KEY: ${SECRET_KEY}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      # app.db داخل volume ذخیره می‌شود تا با هر rebuild پاک نشود
+      DATABASE_URL: sqlite:////app/data/app.db
+    volumes:
+      - backend_data:/app/data
+    restart: unless-stopped
+
+  frontend:
+    image: dnx-taskbot-frontend:latest
+    ports:
+      # آدرس اصلی سایت؛ فقط از خودِ سرور در دسترس است، nginx سیستم آن را عمومی می‌کند
+      - "127.0.0.1:8080:80"
+    depends_on:
+      - backend
+      - db-viewer
+    restart: unless-stopped
+
+  db-viewer:
+    image: dnx-taskbot-db-viewer:latest
+    volumes:
+      # فقط خواندنی؛ همان فایلی که backend استفاده می‌کند اما بدون اجازه‌ی نوشتن
+      - backend_data:/data:ro
+    restart: unless-stopped
+
+volumes:
+  backend_data:

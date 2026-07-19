@@ -1,0 +1,18 @@
+# این فایل فقط برای توسعه‌ی محلی است. Compose خودش این را خودکار اعمال نمی‌کند
+# (عمداً همین اسم انتخاب شد تا روی سرور واقعی اشتباهی اعمال نشود).
+# برای استفاده‌ی محلی صریحاً بگو از هر دو فایل استفاده کند:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml up --build
+services:
+  backend:
+    build:
+      context: ./backend
+
+  frontend:
+    build:
+      context: ./frontend
+    ports:
+      - "8080:80"
+
+  db-viewer:
+    build:
+      context: ./db-viewer
