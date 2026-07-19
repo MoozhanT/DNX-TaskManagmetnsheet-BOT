@@ -11,6 +11,8 @@ services:
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
       # آدرس سرویس بات (روی سروری با دسترسی مستقیم به تلگرام) برای ارسال یادآوری‌ها
       GERMANY_RELAY_URL: ${GERMANY_RELAY_URL:-}
+      # آدرس export CSV گوگل‌شیت تیم؛ اگر خالی باشد سینک غیرفعال می‌ماند
+      SHEET_CSV_URL: ${SHEET_CSV_URL:-}
       # app.db داخل volume ذخیره می‌شود تا با هر rebuild پاک نشود
       DATABASE_URL: sqlite:////app/data/app.db
     volumes:
