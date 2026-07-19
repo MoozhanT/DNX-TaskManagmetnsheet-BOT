@@ -10,6 +10,8 @@ python-jose[cryptography]==3.3.0
 
 # بات تلگرام
 aiogram==3.13.1
+# فقط وقتی TELEGRAM_PROXY_URL ست شده باشد استفاده می‌شود (عبور از فیلترینگ با SOCKS5)
+aiohttp-socks==0.9.1
 
 # scheduler یادآوری
 apscheduler==3.10.4

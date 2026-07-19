@@ -2,6 +2,10 @@
 .env
 frontend/.env.local
 
+# کلید خصوصی تانل SSH (پراکسی عبور از فیلترینگ)؛ در DOCKER.md توضیح داده شده چطور بسازی‌اش
+sshproxy/id_ed25519
+sshproxy/id_ed25519.pub
+
 # بک‌اند پایتون
 backend/venv/
 backend/__pycache__/

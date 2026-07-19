@@ -14,11 +14,12 @@ import logging
 from datetime import datetime
 
 from aiogram import Bot, Dispatcher, Router
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command
 from aiogram.types import Message
 
 import models
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_PROXY_URL
 from database import SessionLocal
 from task_utils import apply_due_date, find_task_by_short_id, format_task_line
 
@@ -28,7 +29,10 @@ router = Router()
 
 # اگر توکن تنظیم نشده باشد، bot=None می‌ماند و start_polling() بی‌اثر خارج می‌شود
 # (این‌طوری پنل وب و API بدون توکن هم قابل تست هستند)
-bot = Bot(token=TELEGRAM_BOT_TOKEN) if TELEGRAM_BOT_TOKEN else None
+# اگر TELEGRAM_PROXY_URL ست شده باشد (مثلاً وقتی تلگرام روی این سرور فیلتر است)،
+# درخواست‌های بات از طریق آن پراکسی (سرویس sshproxy در docker-compose) عبور می‌کنند
+_session = AiohttpSession(proxy=TELEGRAM_PROXY_URL) if TELEGRAM_PROXY_URL else None
+bot = Bot(token=TELEGRAM_BOT_TOKEN, session=_session) if TELEGRAM_BOT_TOKEN else None
 dp = Dispatcher()
 dp.include_router(router)
 

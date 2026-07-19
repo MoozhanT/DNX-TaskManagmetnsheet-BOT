@@ -8,10 +8,27 @@ services:
     environment:
       SECRET_KEY: ${SECRET_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      # اگر تلگرام روی این سرور فیلتر باشد، از تانل SOCKS5 سرویس sshproxy عبور می‌کند
+      TELEGRAM_PROXY_URL: ${TELEGRAM_PROXY_URL:-}
       # app.db داخل volume ذخیره می‌شود تا با هر rebuild پاک نشود
       DATABASE_URL: sqlite:////app/data/app.db
     volumes:
       - backend_data:/app/data
+    restart: unless-stopped
+
+  # تانل SSH (SOCKS5 پویا) به یک سرور خارج، فقط وقتی که تلگرام روی سرور اصلی فیلتر باشد لازم است.
+  # فقط وقتی فعال می‌شود که COMPOSE_PROFILES=proxy در .env ست شده باشد (نگاه کن به .env.example)
+  # چون به یک فایل کلید SSH (./sshproxy/id_ed25519، عمداً در گیت نیست) نیاز دارد.
+  sshproxy:
+    profiles: ["proxy"]
+    build:
+      context: ./sshproxy
+    environment:
+      REMOTE_HOST: ${PROXY_REMOTE_HOST:-}
+      REMOTE_USER: ${PROXY_REMOTE_USER:-root}
+      SOCKS_PORT: "1080"
+    volumes:
+      - ./sshproxy/id_ed25519:/run/secrets/tunnel_key:ro
     restart: unless-stopped
 
   frontend:
