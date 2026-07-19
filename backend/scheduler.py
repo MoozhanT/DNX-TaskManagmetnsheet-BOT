@@ -1,7 +1,9 @@
 """
-Scheduler یادآوری تسک‌ها: هر چند دقیقه یک‌بار (REMINDER_CHECK_INTERVAL_MINUTES) بررسی می‌کند
-کدام تسک‌ها به زمان یادآوری‌شان رسیده‌اند و ارسال پیامش را به سرویس بات (روی سرور دیگر،
-با دسترسی مستقیم به تلگرام) می‌سپارد.
+دو job زمان‌بندی‌شده در همین پراسه‌ی بک‌اند اجرا می‌شوند:
+  - check_reminders: هر چند دقیقه یک‌بار (REMINDER_CHECK_INTERVAL_MINUTES) تسک‌هایی که موعد
+    یادآوری‌شان رسیده را پیدا می‌کند و ارسال پیامش را به سرویس بات (روی سرور دیگر) می‌سپارد.
+  - sheet_sync.sync_sheet_tasks: هر چند دقیقه یک‌بار (SHEET_SYNC_INTERVAL_MINUTES) تسک‌های
+    گوگل‌شیت تیم را به دیتابیس این پروژه همگام می‌کند.
 """
 
 import logging
@@ -11,7 +13,14 @@ import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import models
-from config import GERMANY_RELAY_URL, INTERNAL_API_KEY, REMINDER_CHECK_INTERVAL_MINUTES
+import sheet_sync
+from config import (
+    GERMANY_RELAY_URL,
+    INTERNAL_API_KEY,
+    REMINDER_CHECK_INTERVAL_MINUTES,
+    SHEET_CSV_URL,
+    SHEET_SYNC_INTERVAL_MINUTES,
+)
 from database import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -58,12 +67,31 @@ async def check_reminders():
         db.close()
 
 
+async def _sync_sheet_safely():
+    try:
+        await sheet_sync.sync_sheet_tasks()
+    except Exception:
+        logger.exception("همگام‌سازی گوگل‌شیت ناموفق بود")
+
+
 def start():
-    if not GERMANY_RELAY_URL:
-        logger.warning("GERMANY_RELAY_URL تنظیم نشده؛ scheduler یادآوری اجرا نمی‌شود.")
-        return
-    scheduler.add_job(check_reminders, "interval", minutes=REMINDER_CHECK_INTERVAL_MINUTES)
-    scheduler.start()
+    if GERMANY_RELAY_URL:
+        scheduler.add_job(check_reminders, "interval", minutes=REMINDER_CHECK_INTERVAL_MINUTES)
+    else:
+        logger.warning("GERMANY_RELAY_URL تنظیم نشده؛ یادآوری‌های تلگرام غیرفعال می‌مانند.")
+
+    if SHEET_CSV_URL:
+        scheduler.add_job(
+            _sync_sheet_safely,
+            "interval",
+            minutes=SHEET_SYNC_INTERVAL_MINUTES,
+            next_run_time=datetime.utcnow(),
+        )
+    else:
+        logger.warning("SHEET_CSV_URL تنظیم نشده؛ همگام‌سازی گوگل‌شیت غیرفعال می‌ماند.")
+
+    if scheduler.get_jobs():
+        scheduler.start()
 
 
 def shutdown():

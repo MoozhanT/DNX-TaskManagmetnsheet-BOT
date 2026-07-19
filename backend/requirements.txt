@@ -11,5 +11,6 @@ python-jose[cryptography]==3.3.0
 # برای ارسال یادآوری‌ها به سرویس بات (روی سرور دیگر) از طریق /relay/send
 httpx==0.27.2
 
-# scheduler یادآوری
+# scheduler یادآوری + سینک گوگل‌شیت
 apscheduler==3.10.4
+jdatetime==5.0.0

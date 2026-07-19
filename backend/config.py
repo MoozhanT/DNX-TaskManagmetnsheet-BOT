@@ -15,3 +15,10 @@ REMINDER_OFFSET_MINUTES = int(os.environ.get("REMINDER_OFFSET_MINUTES", "60"))
 
 # فاصله‌ی هر بار بررسی تسک‌هایی که موعد یادآوری‌شان رسیده
 REMINDER_CHECK_INTERVAL_MINUTES = int(os.environ.get("REMINDER_CHECK_INTERVAL_MINUTES", "1"))
+
+# آدرس export CSV گوگل‌شیت تسک‌های تیم (باید با «هرکسی که لینک را دارد» قابل مشاهده باشد).
+# اگر خالی باشد، سینک گوگل‌شیت غیرفعال می‌ماند.
+SHEET_CSV_URL = os.environ.get("SHEET_CSV_URL", "")
+
+# فاصله‌ی هر بار همگام‌سازی با گوگل‌شیت
+SHEET_SYNC_INTERVAL_MINUTES = int(os.environ.get("SHEET_SYNC_INTERVAL_MINUTES", "10"))

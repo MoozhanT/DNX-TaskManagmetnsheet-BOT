@@ -22,6 +22,7 @@ from typing import List, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 import models
@@ -35,6 +36,22 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 Base.metadata.create_all(bind=engine)
+
+
+def _ensure_schema_upgrades() -> None:
+    """create_all فقط جدول‌های جدید می‌سازد، نه ستون‌های جدید روی جدول‌های قبلاً موجود.
+    این تابع ستون‌هایی که بعداً به مدل‌ها اضافه شده‌اند را در دیتابیس‌های قدیمی هم می‌سازد."""
+    inspector = inspect(engine)
+    if "tasks" not in inspector.get_table_names():
+        return
+    existing_columns = {c["name"] for c in inspector.get_columns("tasks")}
+    if "sheet_row_key" not in existing_columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE tasks ADD COLUMN sheet_row_key VARCHAR"))
+        logger.info("ستون sheet_row_key به جدول tasks اضافه شد.")
+
+
+_ensure_schema_upgrades()
 
 
 @asynccontextmanager

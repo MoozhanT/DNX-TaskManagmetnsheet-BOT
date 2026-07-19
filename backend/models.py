@@ -61,6 +61,11 @@ class Task(Base):
     assignee_id = Column(String, ForeignKey("members.id"), nullable=True)
     created_by_id = Column(String, ForeignKey("members.id"), nullable=True)
 
+    # اگر این تسک از گوگل‌شیت سینک شده باشد، شماره‌ی ردیف آن در شیت اینجا ذخیره می‌شود
+    # (برای اینکه سینک‌های بعدی همین تسک را به‌روزرسانی کنند، نه اینکه دوباره بسازند).
+    # عمداً از شماره‌ی ردیف استفاده شده نه ستون WBS Code، چون WBS Code توی شیت یکتا نیست.
+    sheet_row_key = Column(String, nullable=True, unique=True)
+
     status = Column(String, nullable=False, default="pending")  # pending | done
 
     due_date = Column(DateTime, nullable=True)
