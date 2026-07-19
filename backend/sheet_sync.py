@@ -26,6 +26,7 @@ import jdatetime
 import models
 from config import SHEET_CSV_URL
 from database import SessionLocal
+from notify import send_via_relay
 from task_utils import apply_due_date
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,9 @@ async def _fetch_rows() -> list[list[str]]:
 async def sync_sheet_tasks() -> None:
     rows = await _fetch_rows()
 
+    # (chat_id, عنوان, موعد) برای تسک‌های تازه‌ساخته‌شده؛ بعد از commit پیام‌شان ارسال می‌شود
+    new_task_alerts: list[tuple[int, str, Optional[datetime]]] = []
+
     db = SessionLocal()
     try:
         for row_index, row in enumerate(rows):
@@ -116,7 +120,8 @@ async def sync_sheet_tasks() -> None:
 
             row_key = str(row_index)
             task = db.query(models.Task).filter(models.Task.sheet_row_key == row_key).first()
-            if task is None:
+            is_new_task = task is None
+            if is_new_task:
                 task = models.Task(sheet_row_key=row_key, created_by_id=member.id)
                 db.add(task)
 
@@ -138,6 +143,17 @@ async def sync_sheet_tasks() -> None:
                 task.status = new_status
                 task.completed_at = datetime.utcnow() if new_status == "done" else None
 
+            if is_new_task and member.telegram_chat_id:
+                new_task_alerts.append((member.telegram_chat_id, title, due_date))
+
         db.commit()
     finally:
         db.close()
+
+    for chat_id, title, due_date in new_task_alerts:
+        due_text = due_date.strftime("%Y-%m-%d %H:%M") if due_date else "بدون موعد"
+        text = f"📋 تسک جدیدی برایت از شیت اضافه شد:\n{title}\nموعد: {due_text}"
+        try:
+            await send_via_relay(chat_id, text)
+        except Exception:
+            logger.exception("ارسال نوتیفیکیشن تسک جدید ناموفق بود (chat_id=%s)", chat_id)
