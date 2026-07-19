@@ -2,8 +2,9 @@ services:
   backend:
     image: dnx-taskbot-backend:latest
     ports:
-      # پورت 8000 هاست هم باز است (اختیاری، فقط برای تست مستقیم API/دیدن /docs)
-      - "8000:8000"
+      # پورت 8001 هاست هم باز است (اختیاری، فقط برای تست مستقیم API/دیدن /docs)
+      # (8000 روی این سرور قبلاً توسط پروژه‌ی دیگری اشغال شده)
+      - "8001:8000"
     environment:
       SECRET_KEY: ${SECRET_KEY}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
@@ -17,7 +18,8 @@ services:
     image: dnx-taskbot-frontend:latest
     ports:
       # آدرس اصلی سایت؛ فقط از خودِ سرور در دسترس است، nginx سیستم آن را عمومی می‌کند
-      - "127.0.0.1:8080:80"
+      # (8080 روی این سرور قبلاً توسط پروژه‌ی دیگری اشغال شده)
+      - "127.0.0.1:8081:80"
     depends_on:
       - backend
       - db-viewer
