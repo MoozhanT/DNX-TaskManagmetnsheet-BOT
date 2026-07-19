@@ -3,8 +3,29 @@
 from datetime import datetime, timedelta
 from typing import Optional
 
+import jdatetime
+
 import models
 from config import REMINDER_OFFSET_MINUTES
+
+_PERSIAN_MONTH_NAMES = [
+    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
+]
+
+
+def format_jalali_datetime(dt: Optional[datetime]) -> str:
+    """تاریخ میلادی را برای نمایش به کاربر به تاریخ جلالی تبدیل می‌کند."""
+    if dt is None:
+        return "بدون موعد"
+    jalali_date = jdatetime.date.fromgregorian(date=dt.date())
+    month_name = _PERSIAN_MONTH_NAMES[jalali_date.month - 1]
+    return f"{jalali_date.day} {month_name} {jalali_date.year} ساعت {dt.strftime('%H:%M')}"
+
+
+def first_name(full_name: str) -> str:
+    """اسم کوچک را از اسم کامل جدا می‌کند، برای لحن دوستانه‌تر پیام‌ها (مثلاً «موژان جان»)."""
+    return full_name.strip().split()[0] if full_name.strip() else full_name
 
 
 def compute_reminder_at(due_date: Optional[datetime]) -> Optional[datetime]:

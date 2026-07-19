@@ -24,6 +24,7 @@ from config import (
 )
 from database import SessionLocal
 from notify import send_via_relay
+from task_utils import first_name, format_jalali_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +49,8 @@ async def check_reminders():
             # پرچم را همین‌جا ست می‌کنیم تا حتی اگر ارسال پیام خطا بدهد، دوباره تلاش نکنیم و کاربر را اسپم نکنیم
             task.reminded = True
             if task.assignee and task.assignee.telegram_chat_id:
-                due_text = task.due_date.strftime("%Y-%m-%d %H:%M") if task.due_date else "—"
-                text = f"⏰ یادآوری تسک: {task.title}\nموعد: {due_text}"
+                due_text = format_jalali_datetime(task.due_date)
+                text = f"⏰ {first_name(task.assignee.full_name)} جان، یادآوری تسک: {task.title}\nموعد: {due_text}"
                 try:
                     await send_via_relay(task.assignee.telegram_chat_id, text)
                 except Exception:
@@ -74,9 +75,9 @@ async def send_daily_digest():
                 continue
             lines = []
             for task in tasks:
-                due_text = task.due_date.strftime("%Y-%m-%d %H:%M") if task.due_date else "بدون موعد"
+                due_text = format_jalali_datetime(task.due_date)
                 lines.append(f"• {task.title} — موعد: {due_text}")
-            text = "☀️ صبح بخیر! تسک‌های باز تو:\n" + "\n".join(lines)
+            text = f"☀️ صبح بخیر {first_name(member.full_name)} جان! این‌ها تسک‌های باز تو هستن:\n" + "\n".join(lines)
             try:
                 await send_via_relay(member.telegram_chat_id, text)
             except Exception:

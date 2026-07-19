@@ -23,6 +23,7 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+import jdatetime
 from aiogram import Bot, Dispatcher, Router
 from aiogram.filters import Command
 from aiogram.types import Message
@@ -51,9 +52,25 @@ dp.include_router(router)
 _http = httpx.AsyncClient(base_url=IRAN_API_BASE_URL, headers={"X-Internal-Key": INTERNAL_API_KEY}, timeout=15)
 
 
+_PERSIAN_MONTH_NAMES = [
+    "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
+    "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
+]
+
+
+def _format_jalali_datetime(dt: datetime) -> str:
+    jalali_date = jdatetime.date.fromgregorian(date=dt.date())
+    month_name = _PERSIAN_MONTH_NAMES[jalali_date.month - 1]
+    return f"{jalali_date.day} {month_name} {jalali_date.year} ساعت {dt.strftime('%H:%M')}"
+
+
+def _first_name(full_name: str) -> str:
+    return full_name.strip().split()[0] if full_name.strip() else full_name
+
+
 def _format_task_line(task: dict) -> str:
     due = task.get("due_date")
-    due_text = datetime.fromisoformat(due).strftime("%Y-%m-%d %H:%M") if due else "بدون موعد"
+    due_text = _format_jalali_datetime(datetime.fromisoformat(due)) if due else "بدون موعد"
     short_id = task["id"].split("_", 1)[1]
     return f"• [{short_id}] {task['title']} — موعد: {due_text}"
 
@@ -80,7 +97,7 @@ async def cmd_start(message: Message):
     response.raise_for_status()
     member = response.json()
     await message.answer(
-        f"سلام {member['full_name']}! ثبت شدی و از این به بعد یادآوری تسک‌ها برایت ارسال می‌شود.\n\n"
+        f"سلام {_first_name(member['full_name'])} جان! ثبت شدی و از این به بعد یادآوری تسک‌ها برایت ارسال می‌شود.\n\n"
         "دستورهای در دسترس:\n"
         "/addtask عنوان | 2026-07-20 10:00 — افزودن تسک (تاریخ اختیاری)\n"
         "/mytasks — لیست تسک‌های باز من\n"
@@ -134,11 +151,12 @@ async def cmd_mytasks(message: Message):
     response = await _http.get("/internal/tasks", params={"telegram_chat_id": message.chat.id})
     response.raise_for_status()
     tasks = response.json()
+    name = _first_name(message.from_user.full_name) if message.from_user else ""
     if not tasks:
-        await message.answer("تسک بازی نداری. 🎉")
+        await message.answer(f"{name} جان، تسک بازی نداری. 🎉")
         return
     lines = "\n".join(_format_task_line(t) for t in tasks)
-    await message.answer(f"تسک‌های باز تو:\n{lines}")
+    await message.answer(f"{name} جان، این‌ها تسک‌های باز تو هستن:\n{lines}")
 
 
 @router.message(Command("done"))

@@ -27,7 +27,7 @@ import models
 from config import SHEET_CSV_URL
 from database import SessionLocal
 from notify import send_via_relay
-from task_utils import apply_due_date
+from task_utils import apply_due_date, first_name, format_jalali_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +88,8 @@ async def _fetch_rows() -> list[list[str]]:
 async def sync_sheet_tasks() -> None:
     rows = await _fetch_rows()
 
-    # (chat_id, عنوان, موعد) برای تسک‌های تازه‌ساخته‌شده؛ بعد از commit پیام‌شان ارسال می‌شود
-    new_task_alerts: list[tuple[int, str, Optional[datetime]]] = []
+    # (chat_id, اسم عضو, عنوان, موعد) برای تسک‌های تازه‌ساخته‌شده‌ی هنوز بازی که بعد از commit پیام‌شان ارسال می‌شود
+    new_task_alerts: list[tuple[int, str, str, Optional[datetime]]] = []
 
     db = SessionLocal()
     try:
@@ -143,16 +143,18 @@ async def sync_sheet_tasks() -> None:
                 task.status = new_status
                 task.completed_at = datetime.utcnow() if new_status == "done" else None
 
-            if is_new_task and member.telegram_chat_id:
-                new_task_alerts.append((member.telegram_chat_id, title, due_date))
+            # فقط برای تسک‌های تازه و هنوز باز نوتیف بفرست؛ تسکی که از همان اول در شیت
+            # «پایان یافته/کنسل شده» بوده چیز جدیدی برای اطلاع‌دادن ندارد
+            if is_new_task and new_status == "pending" and member.telegram_chat_id:
+                new_task_alerts.append((member.telegram_chat_id, member.full_name, title, due_date))
 
         db.commit()
     finally:
         db.close()
 
-    for chat_id, title, due_date in new_task_alerts:
-        due_text = due_date.strftime("%Y-%m-%d %H:%M") if due_date else "بدون موعد"
-        text = f"📋 تسک جدیدی برایت از شیت اضافه شد:\n{title}\nموعد: {due_text}"
+    for chat_id, member_full_name, title, due_date in new_task_alerts:
+        due_text = format_jalali_datetime(due_date)
+        text = f"📋 {first_name(member_full_name)} جان، یه تسک جدید از شیت برات اضافه شد:\n{title}\nموعد: {due_text}"
         try:
             await send_via_relay(chat_id, text)
         except Exception:
