@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from typing import List, Optional
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
@@ -28,7 +28,9 @@ from sqlalchemy.orm import Session
 import models
 import schemas
 import scheduler as scheduler_module
+import sheet_sync
 from auth import create_access_token, hash_password, require_admin, require_internal_key, verify_password
+from config import SHEET_CSV_URL
 from database import Base, engine, get_db
 from task_utils import apply_due_date, find_task_by_short_id
 
@@ -223,7 +225,11 @@ def update_member(member_id: str, payload: schemas.MemberUpdate, db: Session = D
     response_model=schemas.BotMemberOut,
     dependencies=[Depends(require_internal_key)],
 )
-def bot_register_member(payload: schemas.BotMemberRegister, db: Session = Depends(get_db)):
+def bot_register_member(
+    payload: schemas.BotMemberRegister,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     member = db.query(models.Member).filter(models.Member.telegram_chat_id == payload.telegram_chat_id).first()
     if member is None:
         member = models.Member(
@@ -234,6 +240,11 @@ def bot_register_member(payload: schemas.BotMemberRegister, db: Session = Depend
         db.add(member)
         db.commit()
         db.refresh(member)
+
+        # عضو تازه معمولاً بلافاصله بعد از /start می‌زند /mytasks؛ منتظر چرخه‌ی بعدی سینک (تا
+        # SHEET_SYNC_INTERVAL_MINUTES دیگر) نمی‌مانیم و همین الان یک سینک برایش اجرا می‌کنیم
+        if SHEET_CSV_URL:
+            background_tasks.add_task(sheet_sync.sync_sheet_tasks)
     return member
 
 
