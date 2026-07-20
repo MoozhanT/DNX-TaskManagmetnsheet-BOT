@@ -13,4 +13,6 @@ services:
       # اختیاری: اگر ست شود، هر تسکی که کاربر با /addtask بسازد به تب «new task» گوگل‌شیت هم اضافه می‌شود
       SHEET_APPEND_URL: ${SHEET_APPEND_URL:-}
       SHEET_APPEND_SECRET: ${SHEET_APPEND_SECRET:-}
+      # یوزرنیم تلگرام مسئولان تأیید درخواست تمدید مهلت (بدون @، با کاما جدا)؛ پیش‌فرض: مجید و موژان
+      APPROVER_USERNAMES: ${APPROVER_USERNAMES:-mamokhtarnia,moozhantehrani}
     restart: unless-stopped

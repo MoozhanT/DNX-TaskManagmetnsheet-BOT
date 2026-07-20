@@ -237,6 +237,19 @@ def bot_register_member(payload: schemas.BotMemberRegister, db: Session = Depend
     return member
 
 
+@app.get(
+    "/internal/members/lookup",
+    response_model=schemas.BotMemberLookupOut,
+    dependencies=[Depends(require_internal_key)],
+)
+def bot_lookup_member(username: str, db: Session = Depends(get_db)):
+    """برای پیدا کردن chat_id مسئولان تأیید (مثل درخواست تمدید مهلت) از روی یوزرنیم تلگرام."""
+    member = db.query(models.Member).filter(models.Member.telegram_username.ilike(username)).first()
+    if not member or not member.telegram_chat_id:
+        raise HTTPException(status_code=404, detail="عضو پیدا نشد یا هنوز /start نزده")
+    return member
+
+
 @app.post(
     "/internal/tasks",
     response_model=schemas.BotTaskOut,

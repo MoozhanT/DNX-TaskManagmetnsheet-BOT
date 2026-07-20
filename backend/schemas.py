@@ -87,6 +87,14 @@ class BotMemberOut(BaseModel):
     full_name: str
 
 
+class BotMemberLookupOut(BaseModel):
+    """برخلاف MemberOut عمومی، اینجا chat_id هم برمی‌گردد چون فقط سرویس بات صدایش می‌زند
+    (برای فرستادن پیام به مسئولان تأیید مثل درخواست تمدید مهلت)."""
+    id: str
+    full_name: str
+    telegram_chat_id: int
+
+
 class BotTaskCreate(BaseModel):
     telegram_chat_id: int
     title: str

@@ -37,6 +37,12 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 IRAN_API_BASE_URL = os.environ.get("IRAN_API_BASE_URL", "").rstrip("/")
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
+# درخواست تمدید مهلت مستقیم اعمال نمی‌شود؛ برای این یوزرنیم‌ها (مجید، موژان) پیام تأیید
+# می‌رود و فقط با تأیید یکی از آن‌ها مهلت واقعاً عوض می‌شود
+APPROVER_USERNAMES = [
+    u.strip() for u in os.environ.get("APPROVER_USERNAMES", "mamokhtarnia,moozhantehrani").split(",") if u.strip()
+]
+
 # اختیاری: اگر ست شده باشد، تسک‌های ساخته‌شده با /addtask به تب «new task» گوگل‌شیت هم اضافه می‌شوند
 # (نگاه کن به apps_script_new_task.gs.txt برای نصب طرف گوگل‌شیت)
 SHEET_APPEND_URL = os.environ.get("SHEET_APPEND_URL", "")
@@ -104,9 +110,44 @@ def _build_task_keyboard(task_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[[
             InlineKeyboardButton(text="✅ انجام شد", callback_data=f"done:{short_id}"),
-            InlineKeyboardButton(text="⏳ تمدید ۷ روز", callback_data=f"extend:{short_id}"),
+            InlineKeyboardButton(text="⏳ درخواست تمدید ۷ روز", callback_data=f"extend:{short_id}"),
         ]]
     )
+
+
+def _build_approval_keyboard(short_id: str, requester_chat_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="✅ تأیید تمدید", callback_data=f"approveext:{short_id}:{requester_chat_id}"),
+            InlineKeyboardButton(text="❌ رد درخواست", callback_data=f"rejectext:{short_id}:{requester_chat_id}"),
+        ]]
+    )
+
+
+async def _get_approvers() -> list[dict]:
+    """chat_id مسئولان تأیید (مجید، موژان) را از بک‌اند می‌گیرد؛ کسانی که هنوز /start نزده‌اند رد می‌شوند."""
+    approvers = []
+    for username in APPROVER_USERNAMES:
+        try:
+            response = await _http.get("/internal/members/lookup", params={"username": username})
+            if response.status_code == 404:
+                logger.warning("مسئول تأیید '%s' هنوز /start نزده", username)
+                continue
+            response.raise_for_status()
+            approvers.append(response.json())
+        except Exception:
+            logger.exception("خطا در پیدا کردن مسئول تأیید '%s'", username)
+    return approvers
+
+
+async def _get_own_task(chat_id: int, short_id: str) -> Optional[dict]:
+    """تسک باز خودِ کاربر را با شناسه‌ی کوتاه پیدا می‌کند (برای گرفتن عنوان/موعد قبل از ارسال درخواست تمدید)."""
+    response = await _http.get("/internal/tasks", params={"telegram_chat_id": chat_id})
+    response.raise_for_status()
+    for task in response.json():
+        if _short_id(task["id"]) == short_id:
+            return task
+    return None
 
 
 def _format_task_line(task: dict) -> str:
@@ -267,25 +308,112 @@ async def handle_done_callback(callback: CallbackQuery):
     await callback.message.edit_text(f"✅ <b>{title}</b>\n<i>انجام شد</i>", parse_mode="HTML")
     await callback.answer("تسک به‌عنوان انجام‌شده ثبت شد ✅")
 
+    requester_name = callback.from_user.full_name if callback.from_user else str(callback.message.chat.id)
+    for approver in await _get_approvers():
+        if approver["telegram_chat_id"] == callback.message.chat.id:
+            continue  # اگر خودِ مجید/موژان تسک خودشان را دان کردند، به خودشان دوباره پیام نرود
+        try:
+            await bot.send_message(
+                approver["telegram_chat_id"],
+                f"☑️ {requester_name} تسک زیر رو انجام‌شده علامت زد:\n<b>{title}</b>",
+                parse_mode="HTML",
+            )
+        except Exception:
+            logger.exception("اطلاع‌رسانی انجام‌شدن تسک به مسئول تأیید ناموفق بود")
+
 
 @router.callback_query(F.data.startswith("extend:"))
 async def handle_extend_callback(callback: CallbackQuery):
+    """تمدید مهلت مستقیم اعمال نمی‌شود؛ یک درخواست تأیید برای مسئولان (مجید، موژان) ارسال می‌شود."""
     short_id = callback.data.split(":", 1)[1]
+    requester_chat_id = callback.message.chat.id
+    task = await _get_own_task(requester_chat_id, short_id)
+    if task is None:
+        await callback.answer("این تسک پیدا نشد (شاید قبلاً تمام شده).", show_alert=True)
+        return
+
+    requester_name = callback.from_user.full_name if callback.from_user else str(requester_chat_id)
+    due = task.get("due_date")
+    due_text = _format_jalali_datetime(datetime.fromisoformat(due)) if due else "بدون موعد"
+    request_text = (
+        f"🙋 <b>{requester_name}</b> می‌خواد مهلت تسک زیر رو ۷ روز تمدید کنه:\n"
+        f"<b>{task['title']}</b>\n"
+        f"<i>موعد فعلی: {due_text}</i>"
+    )
+
+    approvers = await _get_approvers()
+    if not approvers:
+        await callback.answer("هیچ‌کدوم از مسئولان تأیید هنوز /start نزده‌اند؛ فعلاً امکان تمدید نیست.", show_alert=True)
+        return
+
+    sent_to_anyone = False
+    for approver in approvers:
+        try:
+            await bot.send_message(
+                approver["telegram_chat_id"],
+                request_text,
+                parse_mode="HTML",
+                reply_markup=_build_approval_keyboard(short_id, requester_chat_id),
+            )
+            sent_to_anyone = True
+        except Exception:
+            logger.exception("ارسال درخواست تمدید به مسئول تأیید ناموفق بود")
+
+    if sent_to_anyone:
+        await callback.answer("درخواست تمدید برای تأیید ارسال شد ⏳")
+    else:
+        await callback.answer("ارسال درخواست تمدید ناموفق بود، دوباره امتحان کن.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("approveext:"))
+async def handle_approve_extend_callback(callback: CallbackQuery):
+    _, short_id, requester_chat_id = callback.data.split(":")
     response = await _http.post(
         f"/internal/tasks/{short_id}/extend",
-        json={"telegram_chat_id": callback.message.chat.id, "days": 7},
+        json={"telegram_chat_id": int(requester_chat_id), "days": 7},
     )
     if response.status_code == 404:
-        await callback.answer("این تسک پیدا نشد.", show_alert=True)
+        await callback.answer("این تسک دیگر پیدا نشد.", show_alert=True)
         return
     response.raise_for_status()
     task = response.json()
+    due_text = _format_jalali_datetime(datetime.fromisoformat(task["due_date"]))
+    approver_name = callback.from_user.full_name if callback.from_user else ""
+
     await callback.message.edit_text(
-        _format_task_message({"title": task["title"], "due_date": task["due_date"]}),
+        callback.message.html_text + f"\n\n✅ <b>تأیید شد</b> توسط {approver_name}",
         parse_mode="HTML",
-        reply_markup=_build_task_keyboard(f"t_{short_id}"),
     )
-    await callback.answer("موعد ۷ روز تمدید شد ⏳")
+    await callback.answer("تأیید شد ✅")
+
+    try:
+        await bot.send_message(
+            int(requester_chat_id),
+            f"✅ درخواست تمدید مهلت تسک <b>{task['title']}</b> تأیید شد.\nموعد جدید: <i>{due_text}</i>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        logger.exception("اطلاع‌رسانی تأیید تمدید به درخواست‌دهنده ناموفق بود")
+
+
+@router.callback_query(F.data.startswith("rejectext:"))
+async def handle_reject_extend_callback(callback: CallbackQuery):
+    _, short_id, requester_chat_id = callback.data.split(":")
+    approver_name = callback.from_user.full_name if callback.from_user else ""
+
+    await callback.message.edit_text(
+        callback.message.html_text + f"\n\n❌ <b>رد شد</b> توسط {approver_name}",
+        parse_mode="HTML",
+    )
+    await callback.answer("رد شد ❌")
+
+    try:
+        await bot.send_message(
+            int(requester_chat_id),
+            "❌ درخواست تمدید مهلت تسکت رد شد.",
+        )
+    except Exception:
+        logger.exception("اطلاع‌رسانی رد تمدید به درخواست‌دهنده ناموفق بود")
 
 
 @asynccontextmanager
