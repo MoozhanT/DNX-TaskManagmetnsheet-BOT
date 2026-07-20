@@ -431,14 +431,22 @@ app = FastAPI(title="DNX Task Manager Bot — Telegram relay", lifespan=lifespan
 class RelaySendRequest(BaseModel):
     chat_id: int
     text: str
+    parse_mode: Optional[str] = None
+    # اگر داده شود، همان دکمه‌های «انجام شد»/«درخواست تمدید» تسک‌های /mytasks زیر پیام گذاشته می‌شود
+    task_id: Optional[str] = None
 
 
 @app.post("/relay/send")
 async def relay_send(payload: RelaySendRequest, x_internal_key: str = Header(default="")):
-    """بک‌اند اصلی (روی سرور دیگر) برای ارسال یادآوری تسک این مسیر را صدا می‌زند."""
+    """بک‌اند اصلی (روی سرور دیگر) برای ارسال یادآوری/نوتیف تسک این مسیر را صدا می‌زند."""
     if x_internal_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
-    await bot.send_message(payload.chat_id, payload.text)
+    await bot.send_message(
+        payload.chat_id,
+        payload.text,
+        parse_mode=payload.parse_mode,
+        reply_markup=_build_task_keyboard(payload.task_id) if payload.task_id else None,
+    )
     return {"ok": True}
 
 

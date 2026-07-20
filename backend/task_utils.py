@@ -42,10 +42,27 @@ def apply_due_date(task: models.Task, due_date: Optional[datetime]) -> None:
     task.reminded = False
 
 
-def format_task_line(task: models.Task) -> str:
-    due = task.due_date.strftime("%Y-%m-%d %H:%M") if task.due_date else "بدون موعد"
-    short_id = task.id.split("_", 1)[1]
-    return f"• [{short_id}] {task.title} — موعد: {due}"
+# رنگ/ایموجی وضعیت بر اساس فاصله تا موعد (همان استایلی که سرویس بات برای /mytasks استفاده می‌کند)
+STATUS_EMOJI = {"overdue": "🔴", "soon": "🟡", "later": "🟢", "none": "⚪️"}
+
+
+def due_status(due_date: Optional[datetime]) -> str:
+    if due_date is None:
+        return "none"
+    days_left = (due_date - datetime.utcnow()).days
+    if days_left < 0:
+        return "overdue"
+    if days_left <= 3:
+        return "soon"
+    return "later"
+
+
+def format_task_message(title: str, due_date: Optional[datetime]) -> str:
+    """همان قالب HTML (ایموجی وضعیت + عنوان بولد + موعد ایتالیک) که در /mytasks استفاده می‌شود،
+    برای یکدست بودن همه‌ی پیام‌های تسک (یادآوری، خلاصه‌ی روزانه، نوتیف تسک جدید از شیت)."""
+    emoji = STATUS_EMOJI[due_status(due_date)]
+    due_text = format_jalali_datetime(due_date)
+    return f"{emoji} <b>{title}</b>\n<i>موعد: {due_text}</i>"
 
 
 def find_task_by_short_id(db, short_id: str) -> Optional[models.Task]:

@@ -24,7 +24,7 @@ from config import (
 )
 from database import SessionLocal
 from notify import send_via_relay
-from task_utils import first_name, format_jalali_datetime
+from task_utils import first_name, format_task_message
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +49,12 @@ async def check_reminders():
             # پرچم را همین‌جا ست می‌کنیم تا حتی اگر ارسال پیام خطا بدهد، دوباره تلاش نکنیم و کاربر را اسپم نکنیم
             task.reminded = True
             if task.assignee and task.assignee.telegram_chat_id:
-                due_text = format_jalali_datetime(task.due_date)
-                text = f"⏰ {first_name(task.assignee.full_name)} جان، یادآوری تسک: {task.title}\nموعد: {due_text}"
+                text = (
+                    f"⏰ {first_name(task.assignee.full_name)} جان، یادآوری تسک:\n\n"
+                    f"{format_task_message(task.title, task.due_date)}"
+                )
                 try:
-                    await send_via_relay(task.assignee.telegram_chat_id, text)
+                    await send_via_relay(task.assignee.telegram_chat_id, text, parse_mode="HTML", task_id=task.id)
                 except Exception:
                     logger.exception("ارسال یادآوری برای تسک %s ناموفق بود", task.id)
         db.commit()
@@ -73,13 +75,18 @@ async def send_daily_digest():
             )
             if not tasks:
                 continue
-            lines = []
-            for task in tasks:
-                due_text = format_jalali_datetime(task.due_date)
-                lines.append(f"• {task.title} — موعد: {due_text}")
-            text = f"☀️ صبح بخیر {first_name(member.full_name)} جان! این‌ها تسک‌های باز تو هستن:\n" + "\n".join(lines)
             try:
-                await send_via_relay(member.telegram_chat_id, text)
+                await send_via_relay(
+                    member.telegram_chat_id,
+                    f"☀️ صبح بخیر {first_name(member.full_name)} جان! این‌ها تسک‌های باز تو هستن:",
+                )
+                for task in tasks:
+                    await send_via_relay(
+                        member.telegram_chat_id,
+                        format_task_message(task.title, task.due_date),
+                        parse_mode="HTML",
+                        task_id=task.id,
+                    )
             except Exception:
                 logger.exception("ارسال خلاصه‌ی روزانه برای عضو %s ناموفق بود", member.id)
     finally:
