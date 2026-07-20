@@ -101,7 +101,9 @@ async def _append_to_new_task_sheet(*, title: str, owner: str, due_date: Optiona
         "status": "پیشنهادی (از بات)",
     }
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        # آدرس اجرای Apps Script با یک 302 به یک لینک محتوای امضاشده ریدایرکت می‌شود؛
+        # باید همان را دنبال کنیم تا پاسخ واقعی (نه فقط ریدایرکت) را ببینیم
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             response = await client.post(SHEET_APPEND_URL, json=payload)
             response.raise_for_status()
     except Exception:
