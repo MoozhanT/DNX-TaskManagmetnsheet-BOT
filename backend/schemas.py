@@ -104,3 +104,8 @@ class BotTaskOut(BaseModel):
 
 class BotTaskDone(BaseModel):
     telegram_chat_id: int
+
+
+class BotTaskExtend(BaseModel):
+    telegram_chat_id: int
+    days: int = 7

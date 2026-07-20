@@ -11,7 +11,7 @@
 دستورهای در دسترس کاربر همان‌هایی هستند که قبلاً مستقیم روی بک‌اند بودند:
   /start                          ثبت‌نام عضو (اولین پیام به بات)
   /addtask عنوان | تاریخ (اختیاری)  افزودن تسک برای خودِ فرستنده
-  /mytasks                        لیست تسک‌های بازِ خودِ فرستنده
+  /mytasks                        لیست تسک‌های بازِ خودِ فرستنده (با دکمه‌ی انجام‌شد/تمدید)
   /done شناسه                     تکمیل یکی از تسک‌های خودِ فرستنده
 """
 
@@ -24,9 +24,9 @@ from typing import Optional
 
 import httpx
 import jdatetime
-from aiogram import Bot, Dispatcher, Router
+from aiogram import Bot, Dispatcher, F, Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
@@ -62,6 +62,20 @@ _PERSIAN_MONTH_NAMES = [
     "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند",
 ]
 
+# رنگ/ایموجی وضعیت بر اساس فاصله تا موعد
+STATUS_EMOJI = {"overdue": "🔴", "soon": "🟡", "later": "🟢", "none": "⚪️"}
+
+
+def _due_status(due_date: Optional[datetime]) -> str:
+    if due_date is None:
+        return "none"
+    days_left = (due_date - datetime.utcnow()).days
+    if days_left < 0:
+        return "overdue"
+    if days_left <= 3:
+        return "soon"
+    return "later"
+
 
 def _format_jalali_datetime(dt: datetime) -> str:
     jalali_date = jdatetime.date.fromgregorian(date=dt.date())
@@ -73,11 +87,32 @@ def _first_name(full_name: str) -> str:
     return full_name.strip().split()[0] if full_name.strip() else full_name
 
 
+def _short_id(task_id: str) -> str:
+    return task_id.split("_", 1)[1]
+
+
+def _format_task_message(task: dict) -> str:
+    due = task.get("due_date")
+    due_dt = datetime.fromisoformat(due) if due else None
+    emoji = STATUS_EMOJI[_due_status(due_dt)]
+    due_text = _format_jalali_datetime(due_dt) if due_dt else "بدون موعد"
+    return f"{emoji} <b>{task['title']}</b>\n<i>موعد: {due_text}</i>"
+
+
+def _build_task_keyboard(task_id: str) -> InlineKeyboardMarkup:
+    short_id = _short_id(task_id)
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[
+            InlineKeyboardButton(text="✅ انجام شد", callback_data=f"done:{short_id}"),
+            InlineKeyboardButton(text="⏳ تمدید ۷ روز", callback_data=f"extend:{short_id}"),
+        ]]
+    )
+
+
 def _format_task_line(task: dict) -> str:
     due = task.get("due_date")
     due_text = _format_jalali_datetime(datetime.fromisoformat(due)) if due else "بدون موعد"
-    short_id = task["id"].split("_", 1)[1]
-    return f"• [{short_id}] {task['title']} — موعد: {due_text}"
+    return f"• [{_short_id(task['id'])}] {task['title']} — موعد: {due_text}"
 
 
 def _parse_due_date(text: str) -> Optional[datetime]:
@@ -169,7 +204,12 @@ async def cmd_addtask(message: Message):
         await message.answer("اول باید /start بزنی تا ثبت‌نام بشوی.")
         return
     response.raise_for_status()
-    await message.answer(f"تسک ساخته شد:\n{_format_task_line(response.json())}")
+    task = response.json()
+    await message.answer(
+        f"تسک ساخته شد:\n{_format_task_message(task)}",
+        parse_mode="HTML",
+        reply_markup=_build_task_keyboard(task["id"]),
+    )
 
     owner_name = message.from_user.full_name if message.from_user else str(message.chat.id)
     await _append_to_new_task_sheet(title=title, owner=owner_name, due_date=due_date)
@@ -184,8 +224,19 @@ async def cmd_mytasks(message: Message):
     if not tasks:
         await message.answer(f"{name} جان، تسک بازی نداری. 🎉")
         return
-    lines = "\n".join(_format_task_line(t) for t in tasks)
-    await message.answer(f"{name} جان، این‌ها تسک‌های باز تو هستن:\n{lines}")
+
+    def _sort_key(t: dict):
+        due = t.get("due_date")
+        return datetime.fromisoformat(due) if due else datetime.max
+
+    tasks.sort(key=_sort_key)
+    await message.answer(f"📋 {name} جان، این‌ها تسک‌های باز تو هستن:")
+    for task in tasks:
+        await message.answer(
+            _format_task_message(task),
+            parse_mode="HTML",
+            reply_markup=_build_task_keyboard(task["id"]),
+        )
 
 
 @router.message(Command("done"))
@@ -202,6 +253,39 @@ async def cmd_done(message: Message):
         return
     response.raise_for_status()
     await message.answer(f"انجام شد ✅ {response.json()['title']}")
+
+
+@router.callback_query(F.data.startswith("done:"))
+async def handle_done_callback(callback: CallbackQuery):
+    short_id = callback.data.split(":", 1)[1]
+    response = await _http.post(f"/internal/tasks/{short_id}/done", json={"telegram_chat_id": callback.message.chat.id})
+    if response.status_code == 404:
+        await callback.answer("این تسک پیدا نشد (شاید قبلاً تمام شده).", show_alert=True)
+        return
+    response.raise_for_status()
+    title = response.json()["title"]
+    await callback.message.edit_text(f"✅ <b>{title}</b>\n<i>انجام شد</i>", parse_mode="HTML")
+    await callback.answer("تسک به‌عنوان انجام‌شده ثبت شد ✅")
+
+
+@router.callback_query(F.data.startswith("extend:"))
+async def handle_extend_callback(callback: CallbackQuery):
+    short_id = callback.data.split(":", 1)[1]
+    response = await _http.post(
+        f"/internal/tasks/{short_id}/extend",
+        json={"telegram_chat_id": callback.message.chat.id, "days": 7},
+    )
+    if response.status_code == 404:
+        await callback.answer("این تسک پیدا نشد.", show_alert=True)
+        return
+    response.raise_for_status()
+    task = response.json()
+    await callback.message.edit_text(
+        _format_task_message({"title": task["title"], "due_date": task["due_date"]}),
+        parse_mode="HTML",
+        reply_markup=_build_task_keyboard(f"t_{short_id}"),
+    )
+    await callback.answer("موعد ۷ روز تمدید شد ⏳")
 
 
 @asynccontextmanager
