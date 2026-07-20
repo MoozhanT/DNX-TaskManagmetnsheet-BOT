@@ -37,6 +37,11 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 IRAN_API_BASE_URL = os.environ.get("IRAN_API_BASE_URL", "").rstrip("/")
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 
+# اختیاری: اگر ست شده باشد، تسک‌های ساخته‌شده با /addtask به تب «new task» گوگل‌شیت هم اضافه می‌شوند
+# (نگاه کن به apps_script_new_task.gs.txt برای نصب طرف گوگل‌شیت)
+SHEET_APPEND_URL = os.environ.get("SHEET_APPEND_URL", "")
+SHEET_APPEND_SECRET = os.environ.get("SHEET_APPEND_SECRET", "")
+
 if not TELEGRAM_BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN تنظیم نشده است")
 if not IRAN_API_BASE_URL:
@@ -82,6 +87,25 @@ def _parse_due_date(text: str) -> Optional[datetime]:
         except ValueError:
             continue
     return None
+
+
+async def _append_to_new_task_sheet(*, title: str, owner: str, due_date: Optional[datetime]) -> None:
+    """تسک تازه‌ساخته‌شده با /addtask را به تب «new task» گوگل‌شیت هم اضافه می‌کند (برای بررسی/تأیید دستی)."""
+    if not SHEET_APPEND_URL:
+        return
+    payload = {
+        "secret": SHEET_APPEND_SECRET,
+        "title": title,
+        "owner": owner,
+        "end_date": _format_jalali_datetime(due_date) if due_date else "",
+        "status": "پیشنهادی (از بات)",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(SHEET_APPEND_URL, json=payload)
+            response.raise_for_status()
+    except Exception:
+        logger.exception("افزودن تسک به تب new task گوگل‌شیت ناموفق بود")
 
 
 @router.message(Command("start"))
@@ -144,6 +168,9 @@ async def cmd_addtask(message: Message):
         return
     response.raise_for_status()
     await message.answer(f"تسک ساخته شد:\n{_format_task_line(response.json())}")
+
+    owner_name = message.from_user.full_name if message.from_user else str(message.chat.id)
+    await _append_to_new_task_sheet(title=title, owner=owner_name, due_date=due_date)
 
 
 @router.message(Command("mytasks"))

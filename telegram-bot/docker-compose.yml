@@ -10,4 +10,7 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       IRAN_API_BASE_URL: ${IRAN_API_BASE_URL}
       INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      # اختیاری: اگر ست شود، هر تسکی که کاربر با /addtask بسازد به تب «new task» گوگل‌شیت هم اضافه می‌شود
+      SHEET_APPEND_URL: ${SHEET_APPEND_URL:-}
+      SHEET_APPEND_SECRET: ${SHEET_APPEND_SECRET:-}
     restart: unless-stopped

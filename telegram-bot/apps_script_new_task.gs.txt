@@ -1,0 +1,50 @@
+// نصب:
+// 1) توی گوگل‌شیت: Extensions > Apps Script
+// 2) کد پایین رو جایگزین محتوای پیش‌فرض کن (SECRET رو با یک مقدار تصادفی طولانی عوض کن)
+// 3) Deploy > New deployment > Select type: Web app
+//    - Execute as: Me
+//    - Who has access: Anyone
+// 4) روی Deploy بزن، لینک "Web app URL" رو کپی کن
+// 5) همون لینک رو به‌عنوان SHEET_APPEND_URL و همون SECRET رو به‌عنوان SHEET_APPEND_SECRET
+//    توی .env سرویس بات (telegram-bot/.env روی سرور آلمان) بذار
+
+function doPost(e) {
+  var SECRET = "REPLACE-WITH-A-LONG-RANDOM-SECRET";
+  var TAB_NAME = "new task";
+
+  var result = { ok: false };
+
+  try {
+    var body = JSON.parse(e.postData.contents);
+    if (body.secret !== SECRET) {
+      result.error = "unauthorized";
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(TAB_NAME);
+    if (!sheet) {
+      result.error = "tab not found: " + TAB_NAME;
+      return ContentService.createTextOutput(JSON.stringify(result))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+
+    // ترتیب ستون‌های تب «new task»: Company, Task/Activity, Description, Owner, Start Date, End Date, Status
+    sheet.appendRow([
+      body.company || "",
+      body.title || "",
+      body.description || "",
+      body.owner || "",
+      body.start_date || "",
+      body.end_date || "",
+      body.status || "پیشنهادی (از بات)",
+    ]);
+
+    result.ok = true;
+  } catch (err) {
+    result.error = String(err);
+  }
+
+  return ContentService.createTextOutput(JSON.stringify(result))
+    .setMimeType(ContentService.MimeType.JSON);
+}
