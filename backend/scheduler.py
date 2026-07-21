@@ -123,7 +123,7 @@ async def send_weekly_report_requests():
             try:
                 await send_via_relay(
                     member.telegram_chat_id,
-                    f"🗓 چهارشنبه شد {first_name(member.full_name)} جان! یه خلاصه از وضعیت تسک‌های بازت بنویس و بفرست 🙏",
+                    f"{first_name(member.full_name)} جان ممنون میشم اپدیت تسک‌های این هفته رو برام بفرستی",
                     expect_reply_forward_to=recipient.telegram_chat_id,
                 )
             except Exception:
