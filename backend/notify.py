@@ -14,16 +14,21 @@ async def send_via_relay(
     *,
     parse_mode: Optional[str] = None,
     task_id: Optional[str] = None,
+    expect_reply_forward_to: Optional[int] = None,
 ) -> None:
     """
     parse_mode="HTML" برای پیام‌های قالب‌بندی‌شده (بولد/ایتالیک) استفاده می‌شود.
     task_id اگر داده شود، سرویس بات دکمه‌های «انجام شد»/«درخواست تمدید» را زیر پیام می‌گذارد.
+    expect_reply_forward_to اگر داده شود (مثلاً برای گزارش هفتگی)، اولین پیام متنی بعدی این
+    کاربر به‌عنوان پاسخ تلقی و مستقیم به این chat_id فوروارد می‌شود.
     """
     payload = {"chat_id": chat_id, "text": text}
     if parse_mode:
         payload["parse_mode"] = parse_mode
     if task_id:
         payload["task_id"] = task_id
+    if expect_reply_forward_to:
+        payload["expect_reply_forward_to"] = expect_reply_forward_to
 
     async with httpx.AsyncClient(timeout=10) as client:
         response = await client.post(

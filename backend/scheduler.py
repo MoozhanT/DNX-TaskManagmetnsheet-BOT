@@ -1,9 +1,11 @@
 """
-سه job زمان‌بندی‌شده در همین پراسه‌ی بک‌اند اجرا می‌شوند:
+چهار job زمان‌بندی‌شده در همین پراسه‌ی بک‌اند اجرا می‌شوند:
   - check_reminders: هر چند دقیقه یک‌بار (REMINDER_CHECK_INTERVAL_MINUTES) تسک‌هایی که موعد
     یادآوری‌شان رسیده را پیدا می‌کند و ارسال پیامش را به سرویس بات (روی سرور دیگر) می‌سپارد.
   - send_daily_digest: هر روز ساعت ۹:۳۰ به‌وقت تهران، برای هرکس یک خلاصه از تسک‌های باز
     امروزش با ددلاین‌هایشان می‌فرستد.
+  - send_weekly_report_requests: هر چهارشنبه ساعت ۱۱:۰۰ به‌وقت تهران، از هرکس که تسک باز دارد
+    یک گزارش وضعیت می‌خواهد؛ جواب هرکس فوری برای موژان فوروارد می‌شود.
   - sheet_sync.sync_sheet_tasks: هر چند دقیقه یک‌بار (SHEET_SYNC_INTERVAL_MINUTES) تسک‌های
     گوگل‌شیت تیم را به دیتابیس این پروژه همگام می‌کند (و برای تسک‌های تازه، خودش فوری اطلاع می‌دهد).
 """
@@ -29,6 +31,9 @@ from task_utils import first_name, format_task_message
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
+
+# یوزرنیم تلگرام کسی که گزارش‌های هفتگی برایش فوروارد می‌شود
+WEEKLY_REPORT_RECIPIENT_USERNAME = "moozhantehrani"
 
 
 async def check_reminders():
@@ -93,6 +98,40 @@ async def send_daily_digest():
         db.close()
 
 
+async def send_weekly_report_requests():
+    db = SessionLocal()
+    try:
+        recipient = (
+            db.query(models.Member)
+            .filter(models.Member.telegram_username.ilike(WEEKLY_REPORT_RECIPIENT_USERNAME))
+            .first()
+        )
+        if not recipient or not recipient.telegram_chat_id:
+            logger.warning("گیرنده‌ی گزارش هفتگی (%s) هنوز /start نزده؛ این هفته رد شد.", WEEKLY_REPORT_RECIPIENT_USERNAME)
+            return
+
+        members = (
+            db.query(models.Member)
+            .join(models.Task, models.Task.assignee_id == models.Member.id)
+            .filter(models.Task.status == "pending", models.Member.telegram_chat_id.isnot(None))
+            .distinct()
+            .all()
+        )
+        for member in members:
+            if member.id == recipient.id:
+                continue  # از خودِ گیرنده گزارش نمی‌خواهیم
+            try:
+                await send_via_relay(
+                    member.telegram_chat_id,
+                    f"🗓 چهارشنبه شد {first_name(member.full_name)} جان! یه خلاصه از وضعیت تسک‌های بازت بنویس و بفرست 🙏",
+                    expect_reply_forward_to=recipient.telegram_chat_id,
+                )
+            except Exception:
+                logger.exception("درخواست گزارش هفتگی برای عضو %s ناموفق بود", member.id)
+    finally:
+        db.close()
+
+
 async def _sync_sheet_safely():
     try:
         await sheet_sync.sync_sheet_tasks()
@@ -104,8 +143,12 @@ def start():
     if GERMANY_RELAY_URL:
         scheduler.add_job(check_reminders, "interval", minutes=REMINDER_CHECK_INTERVAL_MINUTES)
         scheduler.add_job(send_daily_digest, CronTrigger(hour=9, minute=30, timezone="Asia/Tehran"))
+        scheduler.add_job(
+            send_weekly_report_requests,
+            CronTrigger(day_of_week="wed", hour=11, minute=0, timezone="Asia/Tehran"),
+        )
     else:
-        logger.warning("GERMANY_RELAY_URL تنظیم نشده؛ یادآوری‌ها و خلاصه‌ی روزانه غیرفعال می‌مانند.")
+        logger.warning("GERMANY_RELAY_URL تنظیم نشده؛ یادآوری‌ها، خلاصه‌ی روزانه و گزارش هفتگی غیرفعال می‌مانند.")
 
     if SHEET_CSV_URL:
         scheduler.add_job(

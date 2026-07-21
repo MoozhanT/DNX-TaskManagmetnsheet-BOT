@@ -62,6 +62,10 @@ dp.include_router(router)
 
 _http = httpx.AsyncClient(base_url=IRAN_API_BASE_URL, headers={"X-Internal-Key": INTERNAL_API_KEY}, timeout=15)
 
+# chat_id ای که منتظر پاسخ گزارش هفتگی هستیم -> chat_id ای که باید پاسخ برایش فوروارد شود
+# (state ساده و در حافظه؛ چون فقط چند ساعت طول یک روز معتبر است، با ری‌استارت سرویس مشکلی ایجاد نمی‌کند)
+PENDING_REPORTS: dict[int, int] = {}
+
 
 _PERSIAN_MONTH_NAMES = [
     "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
@@ -416,6 +420,23 @@ async def handle_reject_extend_callback(callback: CallbackQuery):
         logger.exception("اطلاع‌رسانی رد تمدید به درخواست‌دهنده ناموفق بود")
 
 
+@router.message(F.text, ~F.text.startswith("/"))
+async def handle_possible_report_reply(message: Message):
+    """اگر منتظر پاسخ گزارش هفتگی این chat_id بودیم، همین پیام را گزارش تلقی می‌کنیم و فوروارد می‌کنیم؛
+    وگرنه بی‌سروصدا نادیده می‌گیریم (این handler آخرین handler روتر است، پس فقط پیام‌های
+    دستورنشناخته/معمولی به اینجا می‌رسند)."""
+    forward_to = PENDING_REPORTS.pop(message.chat.id, None)
+    if forward_to is None:
+        return
+
+    name = message.from_user.full_name if message.from_user else str(message.chat.id)
+    try:
+        await bot.send_message(forward_to, f"📝 گزارش هفتگی <b>{name}</b>:\n{message.text}", parse_mode="HTML")
+        await message.answer("ممنون! گزارشت ارسال شد ✅")
+    except Exception:
+        logger.exception("فوروارد گزارش هفتگی ناموفق بود (chat_id=%s)", message.chat.id)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     polling_task = asyncio.create_task(dp.start_polling(bot))
@@ -434,6 +455,8 @@ class RelaySendRequest(BaseModel):
     parse_mode: Optional[str] = None
     # اگر داده شود، همان دکمه‌های «انجام شد»/«درخواست تمدید» تسک‌های /mytasks زیر پیام گذاشته می‌شود
     task_id: Optional[str] = None
+    # اگر داده شود (مثلاً برای گزارش هفتگی)، اولین پیام متنی بعدی این chat_id به این chat_id فوروارد می‌شود
+    expect_reply_forward_to: Optional[int] = None
 
 
 @app.post("/relay/send")
@@ -441,6 +464,8 @@ async def relay_send(payload: RelaySendRequest, x_internal_key: str = Header(def
     """بک‌اند اصلی (روی سرور دیگر) برای ارسال یادآوری/نوتیف تسک این مسیر را صدا می‌زند."""
     if x_internal_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=403, detail="دسترسی غیرمجاز")
+    if payload.expect_reply_forward_to:
+        PENDING_REPORTS[payload.chat_id] = payload.expect_reply_forward_to
     await bot.send_message(
         payload.chat_id,
         payload.text,
